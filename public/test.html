@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Health API Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        input, button { margin: 5px 0; padding: 10px; width: 100%; max-width: 300px; }
+        button { background-color: #4CAF50; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #45a049; }
+        h1, h2 { color: #333; }
+        #result { margin-top: 20px; }
+        table { width: 100%; max-width: 600px; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        th { background-color: #f2f2f2; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        tr:hover { background-color: #ddd; }
+        @media (max-width: 600px) {
+            input, button, table { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <h1>Health API Test</h1>
+    <div>
+        <h2>Register User</h2>
+        <input type="text" id="reg-username" placeholder="Username">
+        <input type="password" id="reg-password" placeholder="Password">
+        <button onclick="registerUser()">Register</button>
+    </div>
+    <div>
+        <h2>Log Daily Health</h2>
+        <input type="text" id="log-username" placeholder="Username">
+        <input type="number" id="steps" placeholder="Steps">
+        <input type="number" id="sleepHours" placeholder="Sleep Hours">
+        <input type="number" id="waterIntake" placeholder="Water Intake (L)">
+        <input type="text" id="mood" placeholder="Mood">
+        <button onclick="logHealth()">Log Health</button>
+    </div>
+    <div>
+        <h2>View Progress</h2>
+        <input type="text" id="prog-username" placeholder="Username">
+        <button onclick="getProgress()">Get Progress</button>
+    </div>
+    <div>
+        <h2>Mood & Sleep Correlation</h2>
+        <input type="text" id="correlation-username" placeholder="Username">
+        <button onclick="moodSleepCorrelation()">Check Correlation</button>
+    </div>
+    <div>
+        <h2>Weekly Trend Report</h2>
+        <input type="text" id="trend-username" placeholder="Username">
+        <button onclick="weeklyTrendReport()">Get Trend Report</button>
+    </div>
+    <div>
+        <h2>Anomaly Detection</h2>
+        <input type="text" id="anomaly-username" placeholder="Username">
+        <button onclick="detectAnomalies()">Detect Anomalies</button>
+    </div>
+    <div>
+        <h2>Personalized Suggestions</h2>
+        <input type="text" id="suggestions-username" placeholder="Username">
+        <button onclick="personalizedSuggestions()">Get Suggestions</button>
+    </div>
+    <div id="result"></div>
+    <script>
+        async function registerUser() {
+            const username = document.getElementById('reg-username').value;
+            const password = document.getElementById('reg-password').value;
+            const response = await fetch('/api/health', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'register', username, password })
+            });
+            const result = await response.json();
+            document.getElementById('result').innerText = result.message;
+        }
+
+        async function logHealth() {
+            const username = document.getElementById('log-username').value;
+            const steps = document.getElementById('steps').value;
+            const sleepHours = document.getElementById('sleepHours').value;
+            const waterIntake = document.getElementById('waterIntake').value;
+            const mood = document.getElementById('mood').value;
+            const response = await fetch('/api/health', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'logHealth', username, steps, sleepHours, waterIntake, mood })
+            });
+            const result = await response.json();
+            document.getElementById('result').innerText = result.message;
+        }
+
+        async function getProgress() {
+            const username = document.getElementById('prog-username').value;
+            const response = await fetch(`/api/health?action=getProgress&username=${username}`);
+            const result = await response.json();
+            const logs = result.data;
+            if (Array.isArray(logs) && logs.length > 0) {
+                let table = '<table border="1"><tr><th>Date</th><th>Steps</th><th>Sleep Hours</th><th>Water Intake</th><th>Mood</th></tr>';
+                logs.forEach(log => {
+                    const date = new Date(log.date).toLocaleDateString();
+                    table += `<tr><td>${date}</td><td>${log.steps}</td><td>${log.sleepHours}</td><td>${log.waterIntake}</td><td>${log.mood}</td></tr>`;
+                });
+                table += '</table>';
+                document.getElementById('result').innerHTML = table;
+            } else {
+                document.getElementById('result').innerText = 'No progress data available.';
+            }
+        }
+
+        async function moodSleepCorrelation() {
+            const username = document.getElementById('correlation-username').value;
+            const response = await fetch(`/api/health?action=moodSleepCorrelation&username=${username}`);
+            const result = await response.json();
+            document.getElementById('result').innerText = result.data;
+        }
+
+        async function weeklyTrendReport() {
+            const username = document.getElementById('trend-username').value;
+            const response = await fetch(`/api/health?action=weeklyTrendReport&username=${username}`);
+            const result = await response.json();
+            document.getElementById('result').innerText = JSON.stringify(result.data, null, 2);
+        }
+
+        async function detectAnomalies() {
+            const username = document.getElementById('anomaly-username').value;
+            const response = await fetch(`/api/health?action=detectAnomalies&username=${username}`);
+            const result = await response.json();
+            document.getElementById('result').innerText = JSON.stringify(result.data, null, 2);
+        }
+
+        async function personalizedSuggestions() {
+            const username = document.getElementById('suggestions-username').value;
+            const response = await fetch(`/api/health?action=personalizedSuggestions&username=${username}`);
+            const result = await response.json();
+            document.getElementById('result').innerText = result.data.join('\n');
+        }
+    </script>
+</body>
+</html> 
