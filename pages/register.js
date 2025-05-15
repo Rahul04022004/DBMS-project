@@ -48,12 +48,13 @@ export default function RegisterPage() {
 
       const data = await response.json();
 
-      if (response.ok) {
+        if (response.ok) {
+            localStorage.setItem('loginUsername',document.getElementById('username').value)
         setMessage(data.message + " You will be redirected to login shortly.");
         // Optionally clear form or redirect
         setTimeout(() => {
           router.push('/test'); // Redirect to login page (index.js)
-        }, 3000); // Redirect after 3 seconds
+        }, 2000); // Redirect after 3 seconds
       } else {
         setMessage(data.message || 'Failed to register. Please try again.');
       }
