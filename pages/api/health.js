@@ -14,8 +14,19 @@ export default async function handler(req, res) {
   async function registerUser(users, username, password) {
     const existing = await users.findOne({ username });
     if (existing) return 'User already exists';
-    await users.insertOne({ username, password, createdAt: new Date() });
+    await users.insertOne({ username, password, createdAt: new Date(), lastLoginAt: new Date() });
     return 'User registered successfully';
+  }
+
+  async function recordUserLogin(users, username) {
+    const updateResult = await users.updateOne(
+      { username },
+      { $set: { lastLoginAt: new Date() } }
+    );
+    if (updateResult.matchedCount === 0) {
+      return 'User not found, login not recorded.';
+    }
+    return 'Login recorded successfully.';
   }
 
   async function logDailyHealth(users, healthLogs, username, steps, sleepHours, waterIntake, mood) {
@@ -37,13 +48,31 @@ export default async function handler(req, res) {
   async function getProgress(users, healthLogs, username) {
     const user = await users.findOne({ username });
     if (!user) return 'User not found';
+
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
     weekAgo.setHours(0, 0, 0, 0);
+
     const logs = await healthLogs
       .find({ userId: user._id, date: { $gte: weekAgo } })
+      .sort({ date: 1 }) // Sort chronologically
       .toArray();
-    return logs;
+
+    if (logs.length === 0) {
+      return 'No health logs found for the past 7 days.';
+    }
+
+    const formattedLogs = logs.map(log => {
+      const logDate = new Date(log.date);
+      const formattedDate = logDate.toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+      return `On ${formattedDate}: Steps: ${log.steps}, Sleep: ${log.sleepHours}h, Water: ${log.waterIntake}L, Mood: ${log.mood}`;
+    });
+
+    return formattedLogs;
   }
 
   async function moodSleepCorrelation(users, healthLogs, username) {
@@ -91,31 +120,35 @@ export default async function handler(req, res) {
     if (logs.length === 0) return 'No logs for the past week.';
 
     const avg = logs.reduce((acc, log) => ({
-      steps: acc.steps + log.steps,
-      sleepHours: acc.sleepHours + log.sleepHours,
-      waterIntake: acc.waterIntake + log.waterIntake,
+      steps: acc.steps + (log.steps || 0),
+      sleepHours: acc.sleepHours + (log.sleepHours || 0),
+      waterIntake: acc.waterIntake + (log.waterIntake || 0),
     }), { steps: 0, sleepHours: 0, waterIntake: 0 });
 
+    const numLogs = logs.length;
     const averages = {
-      steps: Math.round(avg.steps / logs.length),
-      sleepHours: +(avg.sleepHours / logs.length).toFixed(2),
-      waterIntake: +(avg.waterIntake / logs.length).toFixed(2),
+      steps: numLogs > 0 ? Math.round(avg.steps / numLogs) : 0,
+      sleepHours: numLogs > 0 ? +(avg.sleepHours / numLogs).toFixed(2) : 0,
+      waterIntake: numLogs > 0 ? +(avg.waterIntake / numLogs).toFixed(2) : 0,
     };
 
-    const sortedLogs = logs.sort((a, b) => a.date - b.date);
-    const firstHalf = sortedLogs.slice(0, 3);
-    const lastHalf = sortedLogs.slice(-3);
+    const sortedLogs = logs.sort((a, b) => new Date(a.date) - new Date(b.date));
+    const firstHalf = sortedLogs.slice(0, Math.floor(numLogs / 2));
+    const lastHalf = sortedLogs.slice(Math.ceil(numLogs / 2));
 
     function avgField(arr, field) {
       if (arr.length === 0) return 0;
-      return arr.reduce((sum, l) => sum + l[field], 0) / arr.length;
+      return arr.reduce((sum, l) => sum + (l[field] || 0), 0) / arr.length;
     }
-
-    const trends = {
-      steps: avgField(lastHalf, 'steps') - avgField(firstHalf, 'steps'),
-      sleepHours: avgField(lastHalf, 'sleepHours') - avgField(firstHalf, 'sleepHours'),
-      waterIntake: avgField(lastHalf, 'waterIntake') - avgField(firstHalf, 'waterIntake'),
-    };
+    
+    let trends = { steps: 0, sleepHours: 0, waterIntake: 0 };
+    if (firstHalf.length > 0 && lastHalf.length > 0) {
+        trends = {
+            steps: avgField(lastHalf, 'steps') - avgField(firstHalf, 'steps'),
+            sleepHours: avgField(lastHalf, 'sleepHours') - avgField(firstHalf, 'sleepHours'),
+            waterIntake: avgField(lastHalf, 'waterIntake') - avgField(firstHalf, 'waterIntake'),
+        };
+    }
 
     return {
       averages,
@@ -138,17 +171,18 @@ export default async function handler(req, res) {
     if (logs.length < 2) return 'Not enough data for anomaly detection.';
 
     const avg = logs.reduce((acc, log) => ({
-      steps: acc.steps + log.steps,
-      sleepHours: acc.sleepHours + log.sleepHours,
+      steps: acc.steps + (log.steps || 0),
+      sleepHours: acc.sleepHours + (log.sleepHours || 0),
     }), { steps: 0, sleepHours: 0 });
 
+    const numLogs = logs.length;
     const averages = {
-      steps: avg.steps / logs.length,
-      sleepHours: avg.sleepHours / logs.length,
+      steps: numLogs > 0 ? avg.steps / numLogs : 0,
+      sleepHours: numLogs > 0 ? avg.sleepHours / numLogs : 0,
     };
 
     const anomalies = logs.filter(log =>
-      log.steps < averages.steps * 0.5 || log.sleepHours < averages.sleepHours * 0.5
+      (log.steps || 0) < averages.steps * 0.5 || (log.sleepHours || 0) < averages.sleepHours * 0.5
     ).map(log => ({
       date: log.date,
       steps: log.steps,
@@ -168,9 +202,10 @@ export default async function handler(req, res) {
     const logs = await healthLogs.find({ userId: user._id, date: { $gte: weekAgo } }).toArray();
     if (logs.length === 0) return 'No logs for suggestions.';
 
-    const avgSteps = logs.reduce((sum, l) => sum + l.steps, 0) / logs.length;
-    const avgSleep = logs.reduce((sum, l) => sum + l.sleepHours, 0) / logs.length;
-    const avgWater = logs.reduce((sum, l) => sum + l.waterIntake, 0) / logs.length;
+    const numLogs = logs.length;
+    const avgSteps = logs.reduce((sum, l) => sum + (l.steps || 0), 0) / numLogs;
+    const avgSleep = logs.reduce((sum, l) => sum + (l.sleepHours || 0), 0) / numLogs;
+    const avgWater = logs.reduce((sum, l) => sum + (l.waterIntake || 0), 0) / numLogs;
 
     const suggestions = [];
     if (avgSteps < 5000) suggestions.push('Try to walk at least 5,000 steps daily for better health.');
@@ -194,6 +229,13 @@ export default async function handler(req, res) {
         break;
       case 'logHealth':
         result = await logDailyHealth(users, healthLogs, username, steps, sleepHours, waterIntake, mood);
+        break;
+      case 'recordLogin':
+        if (!username) {
+          result = 'Username is required to record login.';
+        } else {
+          result = await recordUserLogin(users, username);
+        }
         break;
       default:
         result = 'Invalid action';
